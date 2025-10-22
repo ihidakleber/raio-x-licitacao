@@ -24,11 +24,11 @@ ESTADOS = sorted([estado for sublist in REGIOES.values() for estado in sublist])
 
 col1, col2 = st.columns(2)
 with col1:
-    catmat_input = st.text_area("Códigos CATMAT (separados por vírgula)", "470419")
+    catmat_input = st.text_area("Códigos CATMAT (separados por vírgula)", "459670")
     localidades_selecionadas = st.multiselect(
         "Filtro de Localidade (selecione estados ou regiões)",
         options=sorted(list(REGIOES.keys()) + ESTADOS),
-        default=["SUDESTE"]
+        default=["SUDESTE", "NORDESTE", "NORTE"]
     )
 with col2:
     data_inicio = st.date_input("Data de Início", datetime(2023, 1, 1))
@@ -95,6 +95,27 @@ def perform_outlier_iteration(df_calc, df_history, iteration_num):
             
     df_next_calc = df_calc.drop(outliers_indices)
     return df_next_calc, df_history
+
+def criar_unidade_descritiva(row):
+    componentes = []
+
+    if pd.notna(row.get('nomeUnidadeFornecimento')) and str(row.get('nomeUnidadeFornecimento')).strip():
+        componentes.append(str(row.get('nomeUnidadeFornecimento')).strip())
+    
+    capacidade = row.get('capacidadeUnidadeFornecimento')
+    if pd.notna(capacidade) and isinstance(capacidade, (int, float)) and capacidade > 0:
+        componentes.append(str(int(capacidade)))
+
+    unidade_final = None
+    if pd.notna(row.get('nomeUnidadeMedida')) and str(row.get('nomeUnidadeMedida')).strip():
+        unidade_final = str(row.get('nomeUnidadeMedida')).strip()
+    elif pd.notna(row.get('siglaUnidadeMedida')) and str(row.get('siglaUnidadeMedida')).strip():
+        unidade_final = str(row.get('siglaUnidadeMedida')).strip()
+    
+    if unidade_final:
+        componentes.append(unidade_final)
+
+    return " ".join(componentes)
 
 if st.button("Analisar Preços"):
     st.session_state.clear()
@@ -216,15 +237,20 @@ if st.session_state.get('analysis_started', False):
 
     st.subheader("4. Lista Detalhada de Compras")
     df_history['Localidade'] = df_history['municipio'] + ' - ' + df_history['estado']
+    df_history['Unidade Descritiva'] = df_history.apply(criar_unidade_descritiva, axis=1)
     base_url = "https://cnetmobile.estaleiro.serpro.gov.br/comprasnet-web/public/compras/acompanhamento-compra?compra="
     df_history['Link'] = base_url + df_history['idCompra'].astype(str)
 
     df_display = df_history[[
         'idCompra', 'Link', 'descricaoItem', 'Localidade', 'dataResultado', 
-        'quantidade', 'siglaUnidadeMedida', 'precoUnitario', 'Status', 'Iteração Outlier'
+        'quantidade', 'Unidade Descritiva', 'precoUnitario', 'Status', 'Iteração Outlier'
     ]].rename(columns={
-        'idCompra': 'ID Compra', 'descricaoItem': 'Descrição', 'dataResultado': 'Data',
-        'quantidade': 'Qtd.', 'siglaUnidadeMedida': 'Un.', 'precoUnitario': 'Valor Unitário'
+        'idCompra': 'ID Compra', 
+        'descricaoItem': 'Descrição', 
+        'dataResultado': 'Data',
+        'quantidade': 'Qtd.', 
+        'Unidade Descritiva': 'Unidade', 
+        'precoUnitario': 'Valor Unitário'
     })
     
     st.dataframe(
