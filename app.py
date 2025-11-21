@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import plotly.express as px
 
 st.set_page_config(layout="wide")
@@ -25,14 +25,18 @@ ESTADOS = sorted([estado for sublist in REGIOES.values() for estado in sublist])
 col1, col2 = st.columns(2)
 with col1:
     catmat_input = st.text_area("Códigos CATMAT (separados por vírgula)", "459670")
+    st.warning("⚠️ Atenção: Certifique-se de que os códigos CATMAT inseridos referem-se ao mesmo produto. Misturar itens com especificações distintas invalidará a análise estatística.")
+    
     localidades_selecionadas = st.multiselect(
         "Filtro de Localidade",
-        options=sorted(list(REGIOES.keys()) + ESTADOS),
+        options=["NACIONAL"] + sorted(list(REGIOES.keys()) + ESTADOS),
         default=["SUDESTE", "NORDESTE", "NORTE"]
     )
 with col2:
-    data_inicio = st.date_input("Data de Início", datetime(2023, 1, 1))
-    data_fim = st.date_input("Data de Fim", datetime.now())
+    hoje = datetime.now()
+    um_ano_atras = hoje - timedelta(days=365)
+    data_inicio = st.date_input("Data de Início", um_ano_atras)
+    data_fim = st.date_input("Data de Fim", hoje)
 
 @st.cache_data(ttl=3600)
 def buscar_dados_completos(catmat_list, estados_para_buscar, data_inicio, data_fim):
@@ -60,6 +64,9 @@ def buscar_dados_completos(catmat_list, estados_para_buscar, data_inicio, data_f
     for catmat in catmat_list:
         for estado in sorted(list(estados_para_buscar)):
             dados_item = buscar_dados_item(catmat, estado)
+            if dados_item:
+                for item in dados_item:
+                    item['codigoItem'] = catmat
             todos_os_itens.extend(dados_item)
     
     if not todos_os_itens: return pd.DataFrame()
@@ -125,8 +132,13 @@ if st.button("Analisar Preços"):
 
     estados_para_buscar = set()
     for loc in localidades_selecionadas:
-        if loc in REGIOES: estados_para_buscar.update(REGIOES[loc])
-        elif loc in ESTADOS: estados_para_buscar.add(loc)
+        if loc == "NACIONAL":
+            estados_para_buscar.update(ESTADOS)
+        elif loc in REGIOES:
+            estados_para_buscar.update(REGIOES[loc])
+        elif loc in ESTADOS:
+            estados_para_buscar.add(loc)
+    
     if not estados_para_buscar: estados_para_buscar = [None]
     
     with st.spinner("Buscando e processando dados..."):
@@ -259,10 +271,10 @@ if st.session_state.get('data_loaded', False):
         df_history['Link'] = base_url + df_history['idCompra'].astype(str)
 
         df_display = df_history[[
-            'idCompra', 'Link', 'descricaoItem', 'Localidade', 'dataResultado', 
+            'idCompra', 'Link', 'codigoItem', 'descricaoItem', 'Localidade', 'dataResultado', 
             'quantidade', 'Unidade Descritiva', 'precoUnitario', 'Status', 'Iteração Outlier'
         ]].rename(columns={
-            'idCompra': 'ID Compra', 'descricaoItem': 'Descrição', 'dataResultado': 'Data',
+            'idCompra': 'ID Compra', 'codigoItem': 'CATMAT', 'descricaoItem': 'Descrição', 'dataResultado': 'Data',
             'quantidade': 'Qtd.', 'Unidade Descritiva': 'Unidade', 'precoUnitario': 'Valor Unitário'
         })
         
@@ -271,6 +283,7 @@ if st.session_state.get('data_loaded', False):
             .apply(lambda x: ['background-color: #ffcccc' if v != 'Dentro' else '' for v in x], subset=['Status']),
             column_config={
                 "Link": st.column_config.LinkColumn("Link da Compra", display_text="Acessar"),
+                "CATMAT": st.column_config.NumberColumn(format="%d"),
                 "Iteração Outlier": st.column_config.NumberColumn(format="%d")
             },
             use_container_width=True
